@@ -1,7 +1,33 @@
-credentials.py
-.idea/
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
 env/
+venv/
+.venv/
+
+# IDEs & Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build & packaging artifacts
+build/
+*.spec
+
+# Documentation & Analysis notes
+Architecture.md
+Analysis.md
+
+# Logs & Credentials
+credentials.py
+*.log
 geckodriver.log
 apparate.log
-apparate.egg-info 
+.logs/

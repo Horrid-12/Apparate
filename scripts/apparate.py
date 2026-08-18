@@ -1,9 +1,11 @@
 from scripts.spider import Spider
+import json
 import pickle
-from github import Github
+from github import Github, GithubException
 from datetime import datetime
 from scripts.config import logger
 import click
+import sys
 
 
 class Apparate:
@@ -12,94 +14,121 @@ class Apparate:
         self.submissions = []
         self.repo = None
 
-        # verifying GitHub authentication token
+        # ── GitHub Authentication ─────────────────────────────────────────
         try:
-            g = Github(github_token)
-            user = g.get_user()
-            repos = user.get_key(1)  # dummy request to test authorization
-            print(type(repos))
-            print(dir(repos))
-        except Exception as e:
-            if e._GithubException__status == 401:  # unauthorized
-                print("Unable to authenticate to GitHub, please verify token")
-                logger.info("Unable to authenticate to GitHub, please verify token or try again later")
-                exit(1)
-        print("GitHub Authentication Successful")
-        logger.info("GitHub Authentication Successful")
+            token = github_token.strip()
+            try:
+                from github import Auth
+                auth = Auth.Token(token)
+                g = Github(auth=auth, timeout=30, retry=3, user_agent="Apparate-Sync")
+            except Exception:
+                g = Github(token, timeout=30, retry=3, user_agent="Apparate-Sync")
 
-        # verifying that Submissions GitHub Repo exists
+            user = g.get_user()
+            login_name = user.login
+            print(f"GitHub Authentication Successful (User: @{login_name})")
+            logger.info(f"GitHub Authentication Successful (User: @{login_name})")
+        except Exception as e:
+            status = getattr(e, 'status', getattr(e, '_GithubException__status', None))
+            if status == 401 or "401" in str(e) or "Bad credentials" in str(e):
+                print("Unable to authenticate to GitHub: Invalid Personal Access Token.")
+                print("Tip: Click 'Get Token in Browser' to generate a valid token with 'repo' scope.")
+                logger.info("Unable to authenticate to GitHub, invalid token.")
+            elif "503" in str(e) or "504" in str(e) or "Max retries exceeded" in str(e):
+                print("GitHub API temporary connection issue (503/504). Please try again in a few seconds.")
+            else:
+                print(f"GitHub Authentication Error: {e}")
+                logger.exception(e)
+            raise SystemExit(1)
+
+        # ── Verify / Create GitHub Repository ────────────────────────────
         try:
             self.repo = user.get_repo(submissions_repo)
-            logger.info("Submissions Repo already exists")
-            print("Submissions Repo already exists")
+            logger.info(f"Submissions repo '{submissions_repo}' found.")
+            print(f"Submissions repo '{submissions_repo}' found.")
         except Exception as e:
-            if e._GithubException__status == 404:
-                logger.info("Submissions Repo not Found")
-                print("Submissions Repo not Found")
-                self.repo = user.create_repo(name=submissions_repo, private=False,
-                                             description="Collection of Solutions to various HackerRank Problems")
-                self.repo.create_file("/README.md", "initial commit", "# " + submissions_repo)
+            status = getattr(e, 'status', getattr(e, '_GithubException__status', None))
+            if status == 404 or "404" in str(e) or "Not Found" in str(e):
+                logger.info(f"Submissions repo '{submissions_repo}' not found. Creating new repository…")
+                print(f"Repository '{submissions_repo}' not found — creating new repository on GitHub…")
+                self.repo = user.create_repo(
+                    name=submissions_repo,
+                    private=False,
+                    description="Collection of Solutions to various HackerRank Problems"
+                )
+                self.repo.create_file("README.md", "initial commit", "# " + submissions_repo)
                 logger.info("Repo & README.md created successfully")
                 print("Repo & README.md created successfully")
             else:
                 logger.exception(e)
-                print("Exception : ", e)
+                print("GitHub Repository Error: ", e)
+                raise
 
-        # verifying that GitHub Repo contains submissions.txt
+        # ── Load / Initialize Submissions Tracking State ──────────────────
         try:
-            c = self.repo.get_contents("submissions.txt")
-            self.submissions = pickle.loads(c.decoded_content)
+            c = self.repo.get_contents("submissions.json")
+            self.submissions = json.loads(c.decoded_content.decode('utf-8'))
+            logger.info(f"Loaded submissions.json with {len(self.submissions)} recorded entries.")
+            print(f"Loaded existing index ({len(self.submissions)} previous submissions synced).")
         except Exception as e:
-            if e._GithubException__status == 404:
-                logger.info("submissions.txt doesn't exists")
-                print("submissions.txt doesn't exists")
-                c = self.repo.create_file("/submissions.txt", "created submissions.txt", pickle.dumps(self.submissions))
-                logger.info("file created successfully")
-                print("file created successfully")
+            status = getattr(e, 'status', getattr(e, '_GithubException__status', None))
+            if status == 404 or "404" in str(e) or "Not Found" in str(e):
+                # Check for legacy submissions.txt (pickle) for migration
+                try:
+                    c_old = self.repo.get_contents("submissions.txt")
+                    self.submissions = pickle.loads(c_old.decoded_content)
+                    self.repo.create_file("submissions.json", "migrated submissions.txt to json", json.dumps(self.submissions))
+                    logger.info("submissions.txt migrated to submissions.json successfully")
+                    print("Migrated old submissions.txt to submissions.json successfully.")
+                except Exception as e_inner:
+                    status_inner = getattr(e_inner, 'status', getattr(e_inner, '_GithubException__status', None))
+                    if status_inner == 404 or "404" in str(e_inner) or "Not Found" in str(e_inner):
+                        logger.info("Initializing new submissions.json")
+                        print("Initializing new submissions tracking file in repository…")
+                        self.repo.create_file("submissions.json", "created submissions.json", json.dumps(self.submissions))
+                    else:
+                        logger.exception(e_inner)
+                        print("Exception loading state: ", e_inner)
             else:
                 logger.exception(e)
-                print("Exception : ", e)
-
-        logger.info("submissions size {}".format(len(self.submissions)))
-        print("submissions size", len(self.submissions))
+                print("Exception loading state: ", e)
 
     def check_updates(self):
+        use_browser = getattr(sys.modules[__name__], 'browser_login_mode', False)
+        browser_choice = getattr(sys.modules[__name__], 'browser_name_choice', 'Firefox / Floorp')
+        if use_browser:
+            spider = Spider(browser_login=True, browser_name=browser_choice)
+        else:
+            spider = Spider(hackerrank_username, hackerrank_password)
 
-        spider = Spider(hackerrank_username, hackerrank_password)
         if len(self.submissions) > 0:
             last_saved = self.submissions[0][4]  # get all submissions after last_saved
         else:
-            last_saved = -1  # get all the submissions
-        spider.fetch_new_submissions(last_saved)
+            last_saved = -1  # get all submissions
 
+        spider.fetch_new_submissions(last_saved)
         new_submissions = spider.submissions
 
-        if len(new_submissions) is 0:
-            # quit browser
+        if len(new_submissions) == 0:
             spider.quit_driver()
-            # no new submissions found
             return None, None
 
-        logger.info("{} new submission(s) found.".format(len(new_submissions)))
-        logger.debug("Fetching code for new submissions...")
+        logger.info(f"{len(new_submissions)} new submission(s) found.")
+        logger.debug("Fetching code for new submissions…")
+        print(f"{len(new_submissions)} new submission(s) found.")
+        print("Fetching code for new submissions…")
 
-        print("{} new submission(s) found.".format(len(new_submissions)))
-        print("Fetching code for new submissions...")
         codes = spider.fetch_code_for_submissions(new_submissions)
-
-        # quit browser
         spider.quit_driver()
-
         return new_submissions, codes
 
     def create_commit(self, submission, code):
-        # it'll create a commit for added or updated file
         title = submission[0]
         language = submission[1]
         link = submission[2]
 
-        file_directory = "/submissions/"
-        file_name = title
+        file_directory = "submissions/"
+        file_name = title.replace("/", "_").replace("\\", "_")
         file_extension = ""
 
         if "c++" in language.lower():
@@ -113,60 +142,66 @@ class Apparate:
             content = "/*-----------------------------------------------------------------------\n"
         else:
             content = "'''-----------------------------------------------------------------------\n"
-        content += "\nProblem Title: " + title
-        content += "\nProblem Link: " + link
-        content += "\nAuthor: " + hackerrank_username
-        content += "\nLanguage : " + language
+
+        author = hackerrank_username or "HackerRank User"
+        content += f"\nProblem Title: {title}"
+        content += f"\nProblem Link: {link}"
+        content += f"\nAuthor: {author}"
+        content += f"\nLanguage: {language}"
+
         if file_extension != ".py":
             content += "\n\n-----------------------------------------------------------------------*/\n\n"
         else:
             content += "\n\n-----------------------------------------------------------------------'''\n\n"
+
         content += "\n" + code
 
-        file = file_name + file_extension
-        file_path = file_directory + file
+        file_path = file_directory + file_name + file_extension
 
-        # verifying that GitHub Repo contains file at file_path
         try:
             message = "updated " + file_name
-            c = self.repo.get_file_contents(file_path)
-            if c.decoded_content != content:
+            c = self.repo.get_contents(file_path)
+            if c.decoded_content.decode('utf-8', errors='ignore') != content:
                 self.repo.update_file(file_path, message, content, c.sha)
                 logger.info("  -- updated existing file")
                 print("  -- updated existing file")
         except Exception as e:
-            if e._GithubException__status == 404:
+            status = getattr(e, 'status', getattr(e, '_GithubException__status', None))
+            if status == 404 or "404" in str(e) or "Not Found" in str(e):
                 message = "added " + file_name
                 self.repo.create_file(file_path, message, content)
                 logger.info("  -- created new file")
                 print("  -- created new file")
             else:
                 logger.exception(e)
-                print("Exception : ", e)
-        return file
+                print("Exception: ", e)
+
+        return file_path
 
     def update_repo(self, submissions, codes):
-        files = []
-        logger.debug("Updating repo for {} new submission(s)...".format(len(submissions)))
-        print("Updating repo for {} new submission(s)...".format(len(submissions)))
+        logger.debug(f"Updating repo for {len(submissions)} new submission(s)…")
+        print(f"Updating repo for {len(submissions)} new submission(s)…")
         i = 1
         for submission in submissions:
-            logger.info(" - updating repo with submission {}".format(i))
-            print(" - updating repo with submission {}. {}".format(i, submission[0]))
-            file = self.create_commit(submission, codes[submission])
-            files.append(file)
+            logger.info(f" - updating repo with submission {i}")
+            print(f" - updating repo with submission {i}. {submission[0]}")
+            self.create_commit(submission, codes[submission])
             i += 1
 
     def update_submissions(self, submissions):
         try:
-            c = self.repo.get_file_contents("/submissions.txt")
-            self.repo.update_file("/submissions.txt", "updated submissions.txt", pickle.dumps(submissions +
-                                                                                              self.submissions), c.sha)
-            logger.info("submissions.txt updated successfully")
-            print("submissions.txt updated successfully")
+            c = self.repo.get_contents("submissions.json")
+            self.repo.update_file(
+                "submissions.json",
+                "updated submissions.json",
+                json.dumps(submissions + self.submissions),
+                c.sha
+            )
+            logger.info("submissions.json updated successfully")
+            print("submissions.json index updated successfully")
         except Exception as e:
             logger.exception(e)
-            print("Exception : ", e)
+            print("Exception updating submissions index: ", e)
 
 
 @click.command()
@@ -187,36 +222,28 @@ def apparate(repo, user, passwd, token):
     print(startTime.strftime("Executing Apparate on %a, %d %b %Y, %H:%M:%S"))
 
     try:
-        apparate = Apparate()
-
-        new_submissions, codes = apparate.check_updates()
+        app = Apparate()
+        new_submissions, codes = app.check_updates()
 
         if new_submissions is not None:
-            apparate.update_repo(new_submissions, codes)
-            apparate.update_submissions(new_submissions)
+            app.update_repo(new_submissions, codes)
+            app.update_submissions(new_submissions)
         else:
             logger.info("No new submissions found!")
-            logger.info("Nothing to update")
-
-            print("No new submissions found!")
-            print("Nothing to update")
+            print("No new submissions found! Nothing to update.")
 
     except Exception as e:
-
         logger.error("[FATAL Error] Unable to Apparate")
         logger.exception(e)
         print("[FATAL Error] Unable to Apparate", e)
-        exit(1)  # exit indicating some issue/error/problem
+        exit(1)
 
     finally:
-
-        # end timer
         diff = (datetime.now() - startTime).seconds
         minutes = diff // 60
         seconds = diff - minutes * 60
-
-        logger.debug("Time taken to Apparate is {} min(s), {} sec(s)".format(minutes, seconds))
-        print("Time taken to Apparate is {} min(s), {} sec(s)".format(minutes, seconds))
+        logger.debug(f"Time taken to Apparate is {minutes} min(s), {seconds} sec(s)")
+        print(f"Time taken to Apparate is {minutes} min(s), {seconds} sec(s)")
 
 
 if __name__ == "__main__":
