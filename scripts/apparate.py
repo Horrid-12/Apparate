@@ -94,12 +94,7 @@ class Apparate:
                 print("Exception loading state: ", e)
 
     def check_updates(self):
-        use_browser = getattr(sys.modules[__name__], 'browser_login_mode', False)
-        browser_choice = getattr(sys.modules[__name__], 'browser_name_choice', 'Firefox / Floorp')
-        if use_browser:
-            spider = Spider(browser_login=True, browser_name=browser_choice)
-        else:
-            spider = Spider(hackerrank_username, hackerrank_password)
+        spider = Spider(hackerrank_username, hackerrank_cookie)
 
         if len(self.submissions) > 0:
             last_saved = self.submissions[0][4]  # get all submissions after last_saved
@@ -207,14 +202,14 @@ class Apparate:
 @click.command()
 @click.option("--repo", prompt=True, help="Name of GitHub repository to store submissions")
 @click.option("--user", prompt=True, help="Username of your HackerRank account")
-@click.option("--passwd", prompt=True, hide_input=True, help="Login Password of your HackerRank account")
+@click.option("--cookie", prompt=True, hide_input=True, help="Session Cookie (_hrank_session) of your HackerRank account")
 @click.option("--token", prompt=True, help="GitHub Access Token with all repository privileges")
-def apparate(repo, user, passwd, token):
+def apparate(repo, user, cookie, token):
     """ Tool to Synchronize HackerRank Submissions with GitHub """
-    global submissions_repo, hackerrank_username, hackerrank_password, github_token
+    global submissions_repo, hackerrank_username, hackerrank_cookie, github_token
     submissions_repo = repo
     hackerrank_username = user
-    hackerrank_password = passwd
+    hackerrank_cookie = cookie
     github_token = token
 
     startTime = datetime.now()

@@ -2,15 +2,14 @@
 
 Apparate is an automated utility to synchronize your accepted HackerRank solutions directly to a designated GitHub repository.
 
-This project is a modernized fork of the original Apparate utility by [Sanket Gautam](https://github.com/sanketgautam/Apparate), updated with modern browser automation, secure state management, and a native desktop interface.
+This project is a modernized fork of the original Apparate utility by [Sanket Gautam](https://github.com/sanketgautam/Apparate), updated with native API requests, secure state management, and a clean desktop interface.
 
 ---
 
 ## Key Features
 
 - **Dual Interfaces**: Use either the native desktop GUI or the command-line interface (CLI).
-- **Modern Automation**: Powered by Playwright for fast, reliable browser automation without manual driver setup.
-- **Flexible Authentication**: Sign in via credentials or launch your system browser for Google, GitHub, or Single Sign-On (SSO) login.
+- **Fast and Native API Auth**: Completely bypasses slow browser automation, parental control blocks, and Cloudflare challenges by utilizing your direct HackerRank Session Cookie.
 - **Secure State Persistence**: Tracks synchronized submissions using standard `json` stored directly in your GitHub repository, replacing insecure legacy serialization.
 - **Local Processing**: All code extraction and processing occurs locally on your machine without third-party network proxies.
 - **Standalone Binary**: Includes an automated build script to compile a portable Windows `.exe` application.
@@ -37,7 +36,7 @@ To rebuild the standalone Windows binary, run the automated build script:
 ```bash
 python build.py
 ```
-Or double-click `build.bat` on Windows. The script automatically handles process management, cleans previous build artifacts, and outputs `dist/Apparate.exe`.
+The script automatically handles packaging, cleans previous build artifacts, and outputs a lightweight `dist/Apparate.exe`.
 
 ---
 
@@ -56,30 +55,36 @@ Apparate can also be executed directly via terminal or scheduled via cron.
 2. Install dependencies:
    ```bash
    pip install -r requirements.txt
-   playwright install chromium
-   ```
-
-3. Install the package in editable mode:
-   ```bash
-   pip install -e .
    ```
 
 ### Usage
 ```bash
-apparate --repo <Submissions_Repo_Name> --user <HackerRank_Username> --passwd <HackerRank_Password> --token <GitHub_Token>
+python -m scripts.apparate --repo <Submissions_Repo_Name> --user <HackerRank_Username> --cookie <HackerRank_Cookie> --token <GitHub_Token>
 ```
 
 ### Options
 ```
-Usage: apparate [OPTIONS]
-
 Options:
   --repo TEXT    Name of GitHub repository to store submissions
   --user TEXT    Username of your HackerRank account
-  --passwd TEXT  Login password of your HackerRank account
+  --cookie TEXT  Session Cookie (_hrank_session) of your HackerRank account
   --token TEXT   GitHub Personal Access Token with 'repo' scope
   --help         Show this message and exit.
 ```
+
+---
+
+## HackerRank Cookie Authentication
+
+To bypass aggressive bot detection (Cloudflare) and parental controls that block headless browsers, Apparate now uses direct HTTP REST API calls using your HackerRank session cookie.
+
+To get your cookie:
+1. Log into HackerRank in your normal browser (Edge, Chrome, or Firefox).
+2. Press **F12** to open Developer Tools.
+3. Go to the **Application** (Chrome/Edge) or **Storage** (Firefox) tab.
+4. Expand **Cookies** on the left sidebar and select `https://www.hackerrank.com`.
+5. Find the cookie named `_hrank_session`.
+6. Copy its **Value** and paste it into Apparate.
 
 ---
 
@@ -95,9 +100,9 @@ To allow Apparate to create and update your solutions repository:
 ## Architecture Overview
 
 - **`scripts/apparate.py`**: Core orchestrator managing GitHub API operations, repository creation, commit workflows, and submission state tracking (`submissions.json`).
-- **`scripts/spider.py`**: Browser automation layer using Playwright for HackerRank session handling, submission pagination traversal, and code extraction.
-- **`apparate_gui.py`**: Native desktop GUI built with Tkinter, featuring live log streaming, credential caching, and browser selection.
-- **`build.py` / `build.bat`**: Automated PyInstaller packaging pipeline.
+- **`scripts/spider.py`**: Extremely fast REST API automation layer that traverses HackerRank submissions, fetches JSON endpoints, and extracts actual code submissions locally.
+- **`apparate_gui.py`**: Native desktop GUI built with Tkinter, featuring live log streaming and credential caching.
+- **`build.py`**: Automated PyInstaller packaging pipeline.
 
 ---
 

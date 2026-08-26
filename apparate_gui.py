@@ -42,7 +42,7 @@ def _load_fonts():
 _load_fonts()
 
 
-# ── Color Palette (neutral dark, zero color accents) ──────────────────────
+# ── Color Palette ──────────────────────
 BG           = "#1e1e1e"
 BG_FRAME     = "#262626"
 BG_INPUT     = "#1a1a1a"
@@ -111,46 +111,13 @@ class ApparateGUI:
         hr_frame.pack(fill="x", padx=pad, pady=(0, 10))
 
         self.entry_user = self._make_field(hr_frame, "Username")
-        self.entry_pass = self._make_field(hr_frame, "Password", show="•")
-
-        # Browser login toggle
+        self.entry_cookie = self._make_field(hr_frame, "_hrank_session Cookie", show="*")
+        help_label = tk.Label(hr_frame._content, text="(How to get your session cookie?)", fg="#58a6ff", bg=BG_FRAME, cursor="hand2", font=(FONT_FAMILY, 8, "underline"))
+        help_label.pack(anchor="w", padx=4, pady=(0, 6))
+        help_label.bind("<Button-1>", lambda e: self.open_cookie_help())
         self.browser_login_var = tk.BooleanVar(value=False)
-        chk_row = tk.Frame(hr_frame._content, bg=BG_FRAME)
-        chk_row.pack(fill="x", pady=(6, 2))
-        self.chk_browser = tk.Checkbutton(
-            chk_row, text="Login via browser (Google / SSO / Email)",
-            variable=self.browser_login_var, font=(FONT_FAMILY, 8),
-            bg=BG_FRAME, fg=FG_MUTED, activebackground=BG_FRAME,
-            activeforeground=FG, selectcolor=BG_INPUT,
-            highlightthickness=0, bd=0, cursor="hand2",
-            command=self._toggle_browser_login
-        )
-        self.chk_browser.pack(anchor="w")
-
-        # Browser selector row
-        self.browser_choice_frame = tk.Frame(hr_frame._content, bg=BG_FRAME)
-        self.browser_choice_frame.pack(fill="x", pady=(4, 0))
-        
-        tk.Label(
-            self.browser_choice_frame, text="Browser:", font=(FONT_FAMILY, 8),
-            bg=BG_FRAME, fg=FG_DIM
-        ).pack(side="left", padx=(0, 6))
-
         self.browser_choice_var = tk.StringVar(value="Google Chrome")
-        browsers = ["Google Chrome", "Microsoft Edge", "Firefox (Nightly)"]
-        
-        self.opt_browser = tk.OptionMenu(
-            self.browser_choice_frame, self.browser_choice_var, *browsers
-        )
-        self.opt_browser.config(
-            bg=BG_INPUT, fg=FG, activebackground=BG_BUTTON, activeforeground=FG,
-            highlightthickness=1, highlightbackground=BORDER, relief="flat",
-            bd=0, font=(FONT_FAMILY, 8), cursor="hand2"
-        )
-        self.opt_browser["menu"].config(bg=BG_FRAME, fg=FG, activebackground=BG_BUTTON, font=(FONT_FAMILY, 8))
-        self.opt_browser.pack(side="left")
 
-        # ── GitHub Section ────────────────────────────────────────────────
         gh_frame = self._make_group(self.root, "GitHub")
         gh_frame.pack(fill="x", padx=pad, pady=(0, 14))
 
@@ -299,6 +266,17 @@ class ApparateGUI:
 
     # ── Toggle ─────────────────────────────────────────────────────────────
 
+
+    def open_cookie_help(self):
+        from tkinter import messagebox
+        msg = "To bypass Cloudflare & Microsoft Family Safety, Apparate now uses your session cookie directly.\n\n" \
+              "1. Log into HackerRank in your normal browser (Edge/Chrome).\n" \
+              "2. Press F12 to open Developer Tools.\n" \
+              "3. Go to Application (Chrome) or Storage (Firefox) tab.\n" \
+              "4. Expand Cookies and select hackerrank.com.\n" \
+              "5. Find the cookie named '_hrank_session'.\n" \
+              "6. Copy its Value and paste it here."
+        messagebox.showinfo("How to get Session Cookie", msg)
     def _toggle_browser_login(self):
         """Enable/disable credential fields based on the checkbox."""
         if self.browser_login_var.get():
@@ -315,7 +293,7 @@ class ApparateGUI:
         browser_mode = self.browser_login_var.get()
         browser_choice = self.browser_choice_var.get()
         user   = self.entry_user.get().strip()
-        passwd = self.entry_pass.get()
+        passwd = self.entry_cookie.get()
         token  = self.entry_token.get().strip()
         repo   = self.entry_repo.get().strip()
 
@@ -351,7 +329,7 @@ class ApparateGUI:
             import scripts.apparate as apparate_module
             apparate_module.submissions_repo = repo
             apparate_module.hackerrank_username = user
-            apparate_module.hackerrank_password = passwd
+            apparate_module.hackerrank_cookie = passwd
             apparate_module.github_token = token
             apparate_module.browser_login_mode = browser_mode
             apparate_module.browser_name_choice = browser_choice

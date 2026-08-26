@@ -32,7 +32,7 @@ def build():
         "--noconsole",
         "--clean",
         "--name", "Apparate",
-        "--add-data", "fonts;fonts",
+        "--add-data", f"fonts{os.pathsep}fonts",
         "apparate_gui.py"
     ]
     print(f"Running: {' '.join(cmd)}")
