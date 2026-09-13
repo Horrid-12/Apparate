@@ -109,16 +109,26 @@ class Spider:
                             raw_json = urllib.parse.unquote(m.group(1))
                             j = json.loads(raw_json)
                             
-                            # Find code deep inside the json tree
+                            # Find code deep inside the json tree with stronger heuristics
                             found = False
                             def find_code(d):
                                 nonlocal found, code
                                 if found: return
                                 if isinstance(d, dict):
-                                    if 'code' in d and isinstance(d['code'], str) and len(d['code']) > 0:
-                                        code = d['code']
-                                        found = True
-                                        return
+                                    # Look for 'code' key
+                                    if 'code' in d and isinstance(d['code'], str):
+                                        c = d['code']
+                                        # Heuristic: Real code is usually multi-line or contains typical programming syntax
+                                        if len(c) > 5 and any(char in c for char in "{}();=\n"):
+                                            code = c
+                                            found = True
+                                            return
+                                    # Sometimes it might be in 'source' or 'source_code'
+                                    for k in ['source', 'source_code']:
+                                        if k in d and isinstance(d[k], str) and len(d[k]) > 5:
+                                            code = d[k]
+                                            found = True
+                                            return
                                     for v in d.values():
                                         find_code(v)
                                 elif isinstance(d, list):
@@ -128,18 +138,8 @@ class Spider:
                         except Exception as parse_e:
                             logger.error(f"Failed to parse initialData: {parse_e}")
                             
-                # If code is still not found, try the direct REST API
-                if code == "// Could not fetch code snippet":
-                    sub_id = link.split("/")[-1]
-                    api_url = f"https://www.hackerrank.com/rest/contests/master/submissions/{sub_id}"
-                    resp2 = self.session.get(api_url)
-                    if resp2.ok:
-                        try:
-                            j2 = resp2.json()
-                            if 'model' in j2 and 'code' in j2['model']:
-                                code = j2['model']['code']
-                        except:
-                            pass
+                # Note: The REST API fallback (GET /submissions/id) returns 405 Method Not Allowed,
+                # so we rely entirely on the initialData JSON parsing above.
             except Exception as e:
                 print(f"Error fetching {title}: {e}")
                 
