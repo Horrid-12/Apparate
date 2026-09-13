@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Apparate",
+  "version": "0.3.0",
+  "description": "Sync your accepted HackerRank submissions directly to a GitHub repository.",
+  "permissions": ["cookies", "storage"],
+  "host_permissions": [
+    "https://www.hackerrank.com/*",
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Apparate",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "apparate@horrid-12.local",
+      "strict_min_version": "109.0"
+    }
+  }
+}

@@ -40,6 +40,18 @@ The script automatically handles packaging, cleans previous build artifacts, and
 
 ---
 
+## Browser Extension (Firefox & Chrome)
+
+A WebExtension alongside the desktop app that reads your HackerRank session
+cookie automatically (no manual copying) and pushes accepted solutions to a
+GitHub repository — ideal if you use a browser more often than the desktop app.
+
+See [`extension/README.md`](extension/README.md) for install and usage.
+The extension keeps the same `submissions.json` state format as the CLI/GUI,
+so the two tools can share the same repository.
+
+---
+
 ## Command Line Interface (CLI)
 
 Apparate can also be executed directly via terminal or scheduled via cron.

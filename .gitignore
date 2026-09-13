@@ -20,6 +20,7 @@ venv/
 # Build & packaging artifacts
 build/
 *.spec
+extension/dist/
 
 # Documentation & Analysis notes
 Architecture.md

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      Apparate
+      <span class="version">v0.3</span>
+    </div>
+    <div class="tagline">Sync HackerRank submissions to GitHub</div>
+  </header>
+
+  <section class="panel">
+    <label for="token">GitHub Access Token</label>
+    <input id="token" type="password" placeholder="ghp_..." autocomplete="off" spellcheck="false">
+    <button id="btn-token" type="button">Get Token in Browser</button>
+  </section>
+
+  <section class="panel">
+    <label for="repo">Repository Name</label>
+    <input id="repo" type="text" placeholder="hackerrank-solutions" autocomplete="off" spellcheck="false">
+  </section>
+
+  <details class="panel collapsible">
+    <summary>HackerRank session cookie (optional)</summary>
+    <input id="cookie" type="password" placeholder="_hrank_session (auto-read if left empty)" autocomplete="off" spellcheck="false">
+    <p class="hint">
+      Leave empty to read your <em>_hrank_session</em> cookie automatically
+      while you are logged in on HackerRank.
+    </p>
+  </details>
+
+  <button id="btn-sync" type="button">Sync Submissions</button>
+
+  <section class="panel log-panel">
+    <div class="log-title">LOG</div>
+    <div id="log"></div>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>
