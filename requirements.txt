@@ -1,3 +1,5 @@
+beautifulsoup4
+click
 PyGithub
-requests
 PyInstaller
+requests

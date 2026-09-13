@@ -203,7 +203,7 @@ class Apparate:
 @click.option("--repo", prompt=True, help="Name of GitHub repository to store submissions")
 @click.option("--user", prompt=True, help="Username of your HackerRank account")
 @click.option("--cookie", prompt=True, hide_input=True, help="Session Cookie (_hrank_session) of your HackerRank account")
-@click.option("--token", prompt=True, help="GitHub Access Token with all repository privileges")
+@click.option("--token", prompt=True, help="GitHub Personal Access Token with 'repo' scope")
 def apparate(repo, user, cookie, token):
     """ Tool to Synchronize HackerRank Submissions with GitHub """
     global submissions_repo, hackerrank_username, hackerrank_cookie, github_token

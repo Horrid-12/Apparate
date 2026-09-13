@@ -74,5 +74,7 @@ manifest.json        MV3 manifest (Firefox + Chrome compatible)
 background.js        sync engine: HackerRank spider + GitHub push
 popup/               toolbar popup UI
 icons/               generated toolbar icons
-tools/               icon generator + packaging script
+tools/gen_icons.py   toolbar icon generator
+tools/package.ps1    packaging script -> dist/apparate-<version>.zip/.xpi
+tools/selftest.js    headless logic self-test (node tools/selftest.js)
 ```
