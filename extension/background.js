@@ -37,7 +37,7 @@ async function fetchSubmissions(cookie, lastSaved, log) {
 
   for (;;) {
     const url = `${HACKERRANK_ROOT}/rest/contests/master/submissions/?offset=${page * limit}&limit=${limit}`;
-    const resp = await fetch(url, { headers: hrHeaders(cookie) });
+    const resp = await fetch(url, { headers: hrHeaders(cookie), credentials: "include" });
     if (!resp.ok) {
       log(`HackerRank API returned ${resp.status}. Your cookie might be expired or invalid.`);
       break;
@@ -68,14 +68,19 @@ async function fetchSubmissions(cookie, lastSaved, log) {
         continue;
       }
 
-      found.push({
+      const sub = {
         title: m.challenge.name,
         language: m.language,
         problem: `/challenges/${slug}`,
         status: m.status,
         link,
         id: m.id
-      });
+      };
+      // Capture code if the list API includes it (avoids a separate fetch)
+      if (m.code && typeof m.code === "string") sub.code = m.code;
+      if (m.compilable_code && typeof m.compilable_code === "string") sub.code = m.compilable_code;
+
+      found.push(sub);
       log(`Found new accepted submission: ${m.challenge.name} (${m.language})`);
     }
 
@@ -100,7 +105,13 @@ function findCode(node) {
 
   if (typeof node.code === "string") {
     const c = node.code;
-    if (c.length > 5 && /[{}();=\n]/.test(c)) return c;
+    if (c.length > 5 && (
+      /[{}();=\n]/.test(c)
+      || c.includes("#include")
+      || c.includes("using namespace")
+      || c.trimStart().startsWith("def ")
+      || c.trimStart().startsWith("import ")
+    )) return c;
   }
   for (const key of ["source", "source_code"]) {
     if (typeof node[key] === "string" && node[key].length > 5) return node[key];
@@ -113,27 +124,56 @@ function findCode(node) {
 }
 
 async function fetchCode(cookie, submission, log) {
-  const url = /^https?:/i.test(submission.link)
+  const FALLBACK = "// Could not fetch code snippet";
+
+  // If code was already captured from the submissions list API, use it
+  if (submission.code && submission.code.trim().length > 5) {
+    return submission.code;
+  }
+
+  // Strategy 1: REST API (most reliable — returns JSON directly)
+  if (submission.id) {
+    try {
+      const apiUrl = `${HACKERRANK_ROOT}/rest/contests/master/submissions/${submission.id}`;
+      const apiResp = await fetch(apiUrl, {
+        headers: hrHeaders(cookie),
+        credentials: "include"
+      });
+      if (apiResp.ok) {
+        const apiData = await apiResp.json();
+        const model = apiData.model || apiData;
+        const apiCode = model.code || model.source || model.compilable_code || "";
+        if (apiCode && apiCode.trim().length > 5) {
+          return apiCode;
+        }
+      }
+    } catch (e) { /* fall through */ }
+  }
+
+  // Strategy 2: HTML page — parse initialData JSON
+  const pageUrl = /^https?:/i.test(submission.link)
     ? submission.link
     : `${HACKERRANK_ROOT}/${submission.link.replace(/^\/+/, "")}`;
 
   try {
-    const resp = await fetch(url, { headers: hrHeaders(cookie) });
-    if (!resp.ok) return "// Could not fetch code snippet";
-
-    const html = await resp.text();
-    const match = html.match(/<script\s+id="initialData"[^>]*>([\s\S]*?)<\/script>/i);
-    if (!match) return "// Could not fetch code snippet";
-
-    try {
-      const json = JSON.parse(decodeURIComponent(match[1]));
-      return findCode(json) || "// Could not fetch code snippet";
-    } catch (e) {
-      return "// Could not fetch code snippet";
+    const resp = await fetch(pageUrl, {
+      headers: hrHeaders(cookie),
+      credentials: "include"
+    });
+    if (resp.ok) {
+      const html = await resp.text();
+      const match = html.match(/<script\s+id="initialData"[^>]*>([\s\S]*?)<\/script>/i);
+      if (match) {
+        try {
+          const json = JSON.parse(decodeURIComponent(match[1]));
+          const found = findCode(json);
+          if (found) return found;
+        } catch (e) { /* parse error, fall through */ }
+      }
     }
-  } catch (e) {
-    return "// Could not fetch code snippet";
-  }
+  } catch (e) { /* network error, fall through */ }
+
+  return FALLBACK;
 }
 
 function extensionFor(language) {
@@ -151,7 +191,8 @@ function extensionFor(language) {
 }
 
 function buildContent(submission, code, author) {
-  const isPython = submission.language.toLowerCase().includes("python");
+  const lang = submission.language.toLowerCase();
+  const isPython = lang.includes("python") || lang.includes("pypy");
   let content = isPython ? "'''-----------------------------------------------------------------------\n" : "/*-----------------------------------------------------------------------\n";
   content += `\nProblem Title: ${submission.title}`;
   content += `\nProblem Link: ${submission.problem}`;
@@ -229,7 +270,7 @@ async function ensureRepository(token, name, log) {
 }
 
 async function loadState(token, login, repo, log) {
-  const path = encodePath([repo, "contents/submissions.json"]);
+  const path = encodePath([repo, "contents", "submissions.json"]);
   const resp = await github(`${GITHUB_ROOT}/repos/${login}/${path}`, token);
   if (resp.ok) {
     const contents = await resp.json();
@@ -245,7 +286,7 @@ async function loadState(token, login, repo, log) {
 }
 
 async function saveState(token, login, repo, state, log) {
-  const path = encodePath([repo, "contents/submissions.json"]);
+  const path = encodePath([repo, "contents", "submissions.json"]);
   const url = `${GITHUB_ROOT}/repos/${login}/${path}`;
   const existing = await github(url, token);
   const body = {
@@ -317,7 +358,24 @@ async function runSync(config, log) {
   const saved = await loadState(token, login, repo, log);
   const lastSaved = saved.length ? saved[0][4] : undefined;
 
-  const newSubs = await fetchSubmissions(cookieValue, lastSaved, log);
+  let newSubs = await fetchSubmissions(cookieValue, lastSaved, log);
+
+  // Deduplicate: keep only the latest submission per (title, language).
+  // Submissions arrive newest-first, so the first occurrence wins.
+  const seen = new Set();
+  const unique = [];
+  for (const sub of newSubs) {
+    const key = `${sub.title}\0${sub.language}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(sub);
+    }
+  }
+  if (unique.length !== newSubs.length) {
+    log(`Deduplicated: ${newSubs.length} submissions → ${unique.length} unique problems.`);
+    newSubs = unique;
+  }
+
   if (!newSubs.length) {
     log("No new submissions found! Nothing to update.");
     return;

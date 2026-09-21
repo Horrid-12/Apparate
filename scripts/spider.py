@@ -119,7 +119,13 @@ class Spider:
                                     if 'code' in d and isinstance(d['code'], str):
                                         c = d['code']
                                         # Heuristic: Real code is usually multi-line or contains typical programming syntax
-                                        if len(c) > 5 and any(char in c for char in "{}();=\n"):
+                                        if len(c) > 5 and (
+                                            any(char in c for char in "{}();=\n")
+                                            or '#include' in c
+                                            or 'using namespace' in c
+                                            or c.strip().startswith('def ')
+                                            or c.strip().startswith('import ')
+                                        ):
                                             code = c
                                             found = True
                                             return
@@ -140,6 +146,29 @@ class Spider:
                             
                 # Note: The REST API fallback (GET /submissions/id) returns 405 Method Not Allowed,
                 # so we rely entirely on the initialData JSON parsing above.
+                
+                # REST API fallback: try fetching code directly from the submissions API
+                if code == "// Could not fetch code snippet":
+                    try:
+                        # Extract submission ID from the link
+                        sub_id_match = re.search(r'/code/(\d+)', link)
+                        if sub_id_match:
+                            sub_id = sub_id_match.group(1)
+                            api_url = f"https://www.hackerrank.com/rest/contests/master/submissions/{sub_id}"
+                            api_resp = self.session.get(api_url)
+                            if api_resp.ok:
+                                api_data = api_resp.json()
+                                model = api_data.get('model', api_data)
+                                api_code = model.get('code', model.get('source', ''))
+                                if api_code and len(api_code.strip()) > 5:
+                                    code = api_code
+                                    logger.info(f"  Got code via REST API fallback for '{title}'")
+                    except Exception as api_e:
+                        logger.warning(f"REST API fallback also failed for '{title}': {api_e}")
+                        
+                if code == "// Could not fetch code snippet":
+                    logger.warning(f"Could not extract code for '{title}' from any source")
+                    
             except Exception as e:
                 print(f"Error fetching {title}: {e}")
                 

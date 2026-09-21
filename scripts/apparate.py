@@ -104,14 +104,29 @@ class Apparate:
         spider.fetch_new_submissions(last_saved)
         new_submissions = spider.submissions
 
+        # Deduplicate: keep only the latest submission per (title, language).
+        # Submissions arrive newest-first, so the first occurrence wins.
+        seen = set()
+        unique_submissions = []
+        for sub in new_submissions:
+            key = (sub[0], sub[1])  # (title, language)
+            if key not in seen:
+                seen.add(key)
+                unique_submissions.append(sub)
+            else:
+                logger.info(f"Skipping duplicate submission for '{sub[0]}' ({sub[1]})")
+        
+        if len(new_submissions) != len(unique_submissions):
+            print(f"Deduplicated: {len(new_submissions)} submissions → {len(unique_submissions)} unique problems.")
+        new_submissions = unique_submissions
+
         if len(new_submissions) == 0:
             spider.quit_driver()
             return None, None
 
         logger.info(f"{len(new_submissions)} new submission(s) found.")
         logger.debug("Fetching code for new submissions…")
-        print(f"{len(new_submissions)} new submission(s) found.")
-        print("Fetching code for new submissions…")
+        print(f"Fetching source code for {len(new_submissions)} submission(s)...")
 
         codes = spider.fetch_code_for_submissions(new_submissions)
         spider.quit_driver()
@@ -126,11 +141,12 @@ class Apparate:
         file_name = title.replace("/", "_").replace("\\", "_")
         file_extension = ""
 
-        if "c++" in language.lower():
+        lang = language.lower()
+        if "c++" in lang or lang.startswith("cpp"):
             file_extension = ".cpp"
-        elif "java" in language.lower():
+        elif "java" in lang:
             file_extension = ".java"
-        elif "python" in language.lower():
+        elif "python" in lang or lang.startswith("pypy"):
             file_extension = ".py"
 
         if file_extension != ".py":
@@ -184,19 +200,54 @@ class Apparate:
             i += 1
 
     def update_submissions(self, submissions):
-        try:
-            c = self.repo.get_contents("submissions.json")
-            self.repo.update_file(
-                "submissions.json",
-                "updated submissions.json",
-                json.dumps(submissions + self.submissions),
-                c.sha
-            )
-            logger.info("submissions.json updated successfully")
-            print("submissions.json index updated successfully")
-        except Exception as e:
-            logger.exception(e)
-            print("Exception updating submissions index: ", e)
+        new_content = json.dumps(submissions + self.submissions)
+        max_retries = 3
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                # Always re-fetch to get the latest SHA (avoids stale SHA after
+                # the many commits that update_repo() has just pushed).
+                c = self.repo.get_contents("submissions.json")
+                self.repo.update_file(
+                    "submissions.json",
+                    "updated submissions.json",
+                    new_content,
+                    c.sha
+                )
+                logger.info("submissions.json updated successfully")
+                print("submissions.json index updated successfully")
+                return
+            except GithubException as e:
+                status = getattr(e, 'status', None)
+                if status == 404:
+                    # File doesn't exist yet — create it
+                    try:
+                        self.repo.create_file(
+                            "submissions.json",
+                            "created submissions.json",
+                            new_content
+                        )
+                        logger.info("submissions.json created successfully")
+                        print("submissions.json index created successfully")
+                        return
+                    except Exception as create_e:
+                        logger.exception(create_e)
+                        print(f"[Error] Could not create submissions.json: {create_e}")
+                        return
+                elif status == 409 and attempt < max_retries:
+                    # Conflict — SHA is stale; retry with a fresh fetch
+                    logger.warning(f"SHA conflict on attempt {attempt}, retrying…")
+                    import time
+                    time.sleep(1)
+                    continue
+                else:
+                    logger.exception(e)
+                    print(f"[Error] Could not update submissions.json ({status}): {e}")
+                    return
+            except Exception as e:
+                logger.exception(e)
+                print(f"[Error] Could not update submissions.json: {e}")
+                return
 
 
 @click.command()
